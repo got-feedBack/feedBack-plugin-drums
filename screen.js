@@ -38,7 +38,7 @@
 // Word-boundary match so unrelated arrangement names don't trigger
 // Auto-drums via a substring hit — e.g. "Drumstick" (hypothetical)
 // must NOT match "drums". The \b anchors still catch standard
-// Rocksmith arrangement labels cleanly: "Drums", "Drum Kit",
+// an arrangement labels cleanly: "Drums", "Drum Kit",
 // "Percussion", "Electronic Drums", etc.
 const DRUMS_PATTERNS = /\b(?:drums|percussion|drum\s*kit)\b/i;
 // Smaller window = more vertical pixels per second = more space between
