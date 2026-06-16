@@ -182,15 +182,19 @@ function _saveCfg(key, val) {
 // ═══════════════════════════════════════════════════════════════════════
 
 // ── MIDI input ────────────────────────────────────────────────────────
-let _midiAccess = null;
-let _midiInput = null;
-// Gates onmidimessage wiring. init() flips true via _midiResumeHandler
-// and destroy() flips false via _midiPauseHandler. Because _midiInit
-// is async, a requestMIDIAccess promise begun in init() can resolve
-// AFTER destroy() has already run — the resulting _midiAutoConnect
-// would otherwise assign `_midiInput.onmidimessage = _midiOnMessage`
-// on a no-longer-visible renderer, bringing synth + scoring back in
-// the background. Every callsite that would attach the handler
+// MIDI is sourced from the core `midi-input` capability domain
+// (window.slopsmith.midiInput) rather than a private requestMIDIAccess() — one
+// device-access boundary shared with piano/keys/onboarding.
+let _midiReady = false;      // discover() has run
+let _midiHandle = null;      // live domain session handle (addListener/removeListener)
+let _midiListener = null;    // the addListener callback wrapping _midiOnMessage
+let _midiStateSub = false;   // subscribed to midi-input:sources-changed
+let _midiInput = null;       // selected source descriptor { id, name }
+// Gates the live listener wiring. init() flips true via _midiResumeHandler
+// and destroy() flips false via _midiPauseHandler. Because _midiConnect is
+// async, an open() begun in init() can resolve AFTER destroy() has run — the
+// resulting addListener would otherwise re-wire scoring/synth on a
+// no-longer-visible renderer. Every callsite that would attach the listener
 // consults this flag first.
 let _midiActive = false;
 // Wave C: routes incoming MIDI events to the currently-focused drum
@@ -513,37 +517,46 @@ function _synthSetVolume(vol) {
 // Web MIDI input (module-level — one MIDI access per tab)
 // ═══════════════════════════════════════════════════════════════════════
 
-// In-flight guard for the requestMIDIAccess promise. Wave C calls
-// _midiInit() once per init() — N concurrent splitscreen instances
-// would otherwise race to issue N requestMIDIAccess() calls before
-// the first promise resolves and populates _midiAccess. Some
-// browsers throw a permission prompt per call; even when they
-// don't, both branches land at `_midiAccess = await ...` and the
-// later one overwrites the earlier _midiAccess + onstatechange,
-// dropping any device-list updates that arrived between the two
-// resolutions.
+// The core midi-input domain, if present (it ships with core).
+function _mi() {
+    const m = window.slopsmith && window.slopsmith.midiInput;
+    return (m && m.version === 1) ? m : null;
+}
+
+// Domain sources shaped like the old MIDIInput list: { id, name, key }.
+// sourceId == the old MIDIInput.id, so stored `midiInputId` stays compatible.
+function _midiSources() {
+    const mi = _mi();
+    if (!mi) return [];
+    return mi.listSources().map(s => ({ id: s.sourceId, name: s.label, key: s.logicalSourceKey }));
+}
+
+// In-flight guard around discover(): Wave C calls _midiInit() once per init();
+// N concurrent splitscreen instances would otherwise issue N discover() calls
+// (each a requestMIDIAccess via the provider) before the first resolves.
 let _midiInitPromise = null;
 
 async function _midiInit() {
-    if (_midiAccess) return;
+    const mi = _mi();
+    if (!mi || _midiReady) return;
     if (_midiInitPromise) return _midiInitPromise;
-    if (!navigator.requestMIDIAccess) return;
     _midiInitPromise = (async () => {
         try {
-            _midiAccess = await navigator.requestMIDIAccess({ sysex: false });
-            _midiAccess.onstatechange = () => _midiUpdateAllDeviceLists();
+            await mi.discover();           // permission boundary (requestMIDIAccess)
+            _midiReady = true;
+            // Refresh device lists on plug/unplug (replaces MIDIAccess.onstatechange).
+            if (!_midiStateSub && window.slopsmith && typeof window.slopsmith.on === 'function') {
+                _midiStateSub = true;
+                window.slopsmith.on('midi-input:sources-changed', () => _midiUpdateAllDeviceLists());
+            }
             _midiAutoConnect();
-            // Populate whatever settings panels are open — may be zero
-            // on first init, but if any instance has its settings open
-            // we want the MIDI <select> filled.
+            // Populate whatever settings panels are open.
             _midiUpdateAllDeviceLists();
         } catch (e) {
             console.warn('[Drums] MIDI access denied:', e);
         } finally {
-            // Drop the in-flight handle. On success, future calls
-            // short-circuit on `_midiAccess`; on rejection, releasing
-            // the slot lets a later init() retry (e.g. user grants
-            // permission after declining the first prompt).
+            // On success future calls short-circuit on `_midiReady`; on
+            // rejection, releasing the slot lets a later init() retry.
             _midiInitPromise = null;
         }
     })();
@@ -551,9 +564,7 @@ async function _midiInit() {
 }
 
 function _midiAutoConnect() {
-    if (!_midiAccess) return;
-    const inputs = [];
-    _midiAccess.inputs.forEach(inp => inputs.push(inp));
+    const inputs = _midiSources();
     if (!inputs.length) return;
 
     // Distinguish "never picked a device" from "explicitly picked
@@ -568,8 +579,13 @@ function _midiAutoConnect() {
     _midiConnect(target.id);
 }
 
-function _midiConnect(id) {
-    if (_midiInput) _midiInput.onmidimessage = null;
+async function _midiConnect(id) {
+    const mi = _mi();
+    // Tear down any existing live session.
+    if (_midiHandle && _midiListener) { try { _midiHandle.removeListener(_midiListener); } catch (_) { /* best-effort */ } }
+    if (mi && _midiInput) { try { mi.close({ requester: 'drums', logicalSourceKey: 'web-midi::' + _midiInput.id }); } catch (_) { /* best-effort */ } }
+    _midiHandle = null;
+    _midiListener = null;
     _midiInput = null;
 
     // Release anything currently sounding / held on the OLD device
@@ -596,20 +612,29 @@ function _midiConnect(id) {
     // opt-out on next init instead of auto-picking inputs[0] again.
     _saveCfg('midiInputId', id || '');
 
-    if (!id || !_midiAccess) {
+    if (!id || !mi) {
         _midiUpdateAllDeviceLists();
         return;
     }
-    _midiAccess.inputs.forEach(inp => {
-        if (inp.id === id) {
-            _midiInput = inp;
-            // Wire the handler only when at least one renderer is
-            // active. A late _midiConnect from an async _midiInit
-            // that resolved post-destroy would otherwise re-enable
-            // scoring / synth in the background.
-            if (_midiActive) _midiInput.onmidimessage = _midiOnMessage;
+    const src = _midiSources().find(s => s.id === id);
+    if (!src) { _midiUpdateAllDeviceLists(); return; }
+    _midiInput = { id: src.id, name: src.name };   // selection descriptor for the UI
+    try {
+        await mi.select(src.key);
+        const res = await mi.open({ requester: 'drums', logicalSourceKey: src.key });
+        if (res && res.handle) {
+            _midiHandle = res.handle;
+            // The domain handle delivers raw MIDI data; adapt to the old
+            // MIDIMessageEvent shape so _midiOnMessage stays unchanged.
+            _midiListener = (data) => _midiOnMessage({ data });
+            // Wire the listener only when at least one renderer is active. A
+            // late open() from an async _midiInit that resolved post-destroy
+            // would otherwise re-enable scoring/synth in the background.
+            if (_midiActive) _midiHandle.addListener(_midiListener);
         }
-    });
+    } catch (e) {
+        console.warn('[Drums] MIDI open failed:', e);
+    }
     _midiUpdateAllDeviceLists();
 }
 
@@ -623,7 +648,7 @@ function _midiPauseHandler() {
     // Keep _midiInput so a future init() can reattach without the
     // user re-picking.
     _midiActive = false;
-    if (_midiInput) _midiInput.onmidimessage = null;
+    if (_midiHandle && _midiListener) { try { _midiHandle.removeListener(_midiListener); } catch (_) { /* best-effort */ } }
     // Clear pending Learn-mode sentinel — leaving it set would
     // consume the first drum hit on the NEXT renderer lifetime
     // (user clicks Learn, closes the last drums panel before
@@ -641,7 +666,7 @@ function _midiResumeHandler() {
     // handler too. If _midiInput is already populated from a prior
     // lifetime, restore the handler immediately.
     _midiActive = true;
-    if (_midiInput) _midiInput.onmidimessage = _midiOnMessage;
+    if (_midiHandle && _midiListener) { try { _midiHandle.addListener(_midiListener); } catch (_) { /* best-effort */ } }
 }
 
 function _midiOnMessage(e) {
@@ -663,9 +688,7 @@ function _midiOnMessage(e) {
 }
 
 function _midiUpdateAllDeviceLists() {
-    if (!_midiAccess) return;
-    const inputs = [];
-    _midiAccess.inputs.forEach(inp => inputs.push(inp));
+    const inputs = _midiSources();
 
     // Every instance's settings panel (if open) has a
     // `.drums-midi-select` node. Iterate all of them so a
