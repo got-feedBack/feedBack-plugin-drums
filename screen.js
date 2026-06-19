@@ -554,7 +554,7 @@ async function _midiInit() {
             // Refresh device lists on plug/unplug (replaces MIDIAccess.onstatechange).
             if (!_midiStateSub && window.slopsmith && typeof window.slopsmith.on === 'function') {
                 _midiStateSub = true;
-                window.slopsmith.on('midi-input:sources-changed', () => _midiUpdateAllDeviceLists());
+                window.slopsmith.on('midi-input:sources-changed', () => _midiReconcileSources());
             }
             _midiAutoConnect();
             // Populate whatever settings panels are open.
@@ -568,6 +568,28 @@ async function _midiInit() {
         }
     })();
     return _midiInitPromise;
+}
+
+// Plug/unplug reconciliation (midi-input:sources-changed). The domain closes +
+// deletes a session when its device is unplugged, so refreshing the dropdown
+// isn't enough: if OUR selected device vanished, drop the now-stale
+// handle/selection (keeping _midiActive) and re-auto-connect — that reattaches
+// the saved device when it's replugged, or falls back to another input. Then
+// refresh the dropdowns. If the selected device is unaffected, just refresh.
+function _midiReconcileSources() {
+    if (_midiInput && !_midiSources().some(s => s.id === _midiInput.id)) {
+        if (_midiHandle && _midiListener) { try { _midiHandle.removeListener(_midiListener); } catch (_) { /* best-effort */ } }
+        _midiHandle = null;
+        _midiListener = null;
+        _midiInput = null;
+        // No note-off can arrive for pads that were down at unplug — clear any
+        // sounding/lit state so a lane isn't stuck until the next hit.
+        for (const inst of _instances) {
+            if (inst && typeof inst._releaseAllSounding === 'function') inst._releaseAllSounding();
+        }
+    }
+    if (!_midiInput) _midiAutoConnect();
+    _midiUpdateAllDeviceLists();
 }
 
 function _midiAutoConnect() {
