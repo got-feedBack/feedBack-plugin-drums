@@ -1317,7 +1317,7 @@ function createFactory() {
             // real close button. insertBefore on a node that isn't a
             // direct child of `anchor` throws NotFoundError DOMException.
             const closeBtn = anchor.querySelector(':scope > button:last-of-type');
-            if (closeBtn) anchor.insertBefore(gear, closeBtn);
+            if (closeBtn && closeBtn.parentNode === anchor) anchor.insertBefore(gear, closeBtn);
             else anchor.appendChild(gear);
         }
         _settingsGear = gear;
@@ -1414,7 +1414,7 @@ function createFactory() {
             panelChrome.appendChild(panel);
         } else {
             const controls = document.getElementById('player-controls');
-            if (controls) mount.insertBefore(panel, controls);
+            if (controls && controls.parentNode === mount) mount.insertBefore(panel, controls);
             else mount.appendChild(panel);
         }
         _settingsPanel = panel;
