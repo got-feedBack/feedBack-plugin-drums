@@ -642,9 +642,15 @@ async function _midiConnect(id) {
             // late open() from an async _midiInit that resolved post-destroy
             // would otherwise re-enable scoring/synth in the background.
             if (_midiActive) _midiHandle.addListener(_midiListener);
+        } else {
+            // Open yielded no live handle (device vanished post-discovery, or the
+            // provider reported denied/unavailable). Clear the selection so the UI
+            // doesn't show a phantom connected device and miss-counting stays off.
+            _midiInput = null;
         }
     } catch (e) {
         console.warn('[Drums] MIDI open failed:', e);
+        _midiInput = null;
     }
     _midiUpdateAllDeviceLists();
 }
