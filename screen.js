@@ -687,7 +687,11 @@ async function _midiConnect(id) {
         }
     } catch (e) {
         console.warn('[Drums] MIDI open failed:', e);
-        _midiInput = null;
+        // Only clear if we're still the current connect — a stale older open's
+        // rejection (rapid switch / autoconnect racing a manual pick) must not
+        // wipe a newer connect's already-installed _midiInput/_midiHandle (which
+        // would also leak the live handle, since closes are gated on _midiInput).
+        if (myGen === _midiConnectSeq) _midiInput = null;
     }
     _midiUpdateAllDeviceLists();
 }
