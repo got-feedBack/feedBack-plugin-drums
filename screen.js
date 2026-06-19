@@ -189,7 +189,8 @@ let _midiReady = false;      // discover() has run
 let _midiHandle = null;      // live domain session handle (addListener/removeListener)
 let _midiListener = null;    // the addListener callback wrapping _midiOnMessage
 let _midiStateSub = false;   // subscribed to midi-input:sources-changed
-let _midiInput = null;       // selected source descriptor { id, name }
+let _midiInput = null;       // selected source descriptor { id, name, key }
+let _midiConnectSeq = 0;     // generation guard for async _midiConnect races
 // Gates the live listener wiring. init() flips true via _midiResumeHandler
 // and destroy() flips false via _midiPauseHandler. Because _midiConnect is
 // async, an open() begun in init() can resolve AFTER destroy() has run — the
@@ -542,7 +543,10 @@ async function _midiInit() {
     if (_midiInitPromise) return _midiInitPromise;
     _midiInitPromise = (async () => {
         try {
-            await mi.discover();           // permission boundary (requestMIDIAccess)
+            const r = await mi.discover();  // permission boundary (requestMIDIAccess)
+            // Only latch ready on a successful discovery — a denied/unavailable
+            // outcome must NOT latch, or reopening the panel never retries.
+            if (!r || r.outcome !== 'handled') return;
             _midiReady = true;
             // Refresh device lists on plug/unplug (replaces MIDIAccess.onstatechange).
             if (!_midiStateSub && window.slopsmith && typeof window.slopsmith.on === 'function') {
@@ -580,10 +584,11 @@ function _midiAutoConnect() {
 }
 
 async function _midiConnect(id) {
+    const myGen = ++_midiConnectSeq;
     const mi = _mi();
     // Tear down any existing live session.
     if (_midiHandle && _midiListener) { try { _midiHandle.removeListener(_midiListener); } catch (_) { /* best-effort */ } }
-    if (mi && _midiInput) { try { mi.close({ requester: 'drums', logicalSourceKey: 'web-midi::' + _midiInput.id }); } catch (_) { /* best-effort */ } }
+    if (mi && _midiInput) { try { mi.close({ requester: 'drums', logicalSourceKey: _midiInput.key }); } catch (_) { /* best-effort */ } }
     _midiHandle = null;
     _midiListener = null;
     _midiInput = null;
@@ -618,10 +623,16 @@ async function _midiConnect(id) {
     }
     const src = _midiSources().find(s => s.id === id);
     if (!src) { _midiUpdateAllDeviceLists(); return; }
-    _midiInput = { id: src.id, name: src.name };   // selection descriptor for the UI
+    _midiInput = { id: src.id, name: src.name, key: src.key };   // selection descriptor for the UI
     try {
         await mi.select(src.key);
         const res = await mi.open({ requester: 'drums', logicalSourceKey: src.key });
+        // A newer _midiConnect (rapid device switch / None) superseded us while
+        // we awaited — discard this open so we don't install a stale handle.
+        if (myGen !== _midiConnectSeq) {
+            if (!_midiInput || _midiInput.key !== src.key) { try { mi.close({ requester: 'drums', logicalSourceKey: src.key }); } catch (_) { /* best-effort */ } }
+            return;
+        }
         if (res && res.handle) {
             _midiHandle = res.handle;
             // The domain handle delivers raw MIDI data; adapt to the old
