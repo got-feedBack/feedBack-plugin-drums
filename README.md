@@ -2,7 +2,7 @@
 
 ![Drum Highway](screenshot.png)
 
-A plugin for [Slopsmith](https://github.com/got-feedback/feedback) that replaces the guitar highway with a lane-based drum view, with MIDI drum pad input and a built-in drum kit synthesizer.
+A plugin for [Slopsmith](https://github.com/got-feedback/feedBack) that replaces the guitar highway with a lane-based drum view, with MIDI drum pad input and a built-in drum kit synthesizer.
 
 ## Features
 
@@ -41,7 +41,7 @@ A plugin for [Slopsmith](https://github.com/got-feedback/feedback) that replaces
 
 ```bash
 cd /path/to/slopsmith/plugins
-git clone https://github.com/got-feedback/feedback-plugin-drums.git drums
+git clone https://github.com/got-feedback/feedBack-plugin-drums.git drums
 docker compose restart
 ```
 
@@ -49,7 +49,7 @@ A "Drums" button will appear in the player controls when you play a song. Click 
 
 ## How It Works
 
-The plugin reads note data from the highway renderer and maps them to drum lanes. Notes use the MIDI encoding convention `midi = string * 24 + fret`, which the [editor plugin](https://github.com/got-feedback/feedback-plugin-editor) uses when importing drum tracks from Guitar Pro files.
+The plugin reads note data from the highway renderer and maps them to drum lanes. Notes use the MIDI encoding convention `midi = string * 24 + fret`, which the [editor plugin](https://github.com/got-feedback/feedBack-plugin-editor) uses when importing drum tracks from Guitar Pro files.
 
 ### MIDI Drum Pad
 
