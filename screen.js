@@ -2098,5 +2098,7 @@ createFactory.matchesArrangement = function (songInfo) {
 };
 
 window.slopsmithViz_drums = createFactory;
+// slopsmith→feedBack rename: host viz picker looks up `window.feedBackViz_<id>`.
+window.feedBackViz_drums = window.slopsmithViz_drums;
 
 })();
