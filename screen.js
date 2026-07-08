@@ -2101,4 +2101,14 @@ window.slopsmithViz_drums = createFactory;
 // slopsmith→feedBack rename: host viz picker looks up `window.feedBackViz_<id>`.
 window.feedBackViz_drums = window.slopsmithViz_drums;
 
+// Node-only export hook for tests; browsers keep the window.*Viz_drums wiring.
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        noteToMidi, _rgbStr, _validateCustomMapping, _drumTabHitsToNotes,
+        _applyLanePreset, _getActiveDrumMap, _midiToLaneIdx, _songNoteToLaneIdx,
+        _midiResolveSaved, DRUM_LANES, PIECE_DEFAULT_MIDI,
+        matchesArrangement: createFactory.matchesArrangement,
+    };
+}
+
 })();
