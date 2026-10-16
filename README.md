@@ -12,7 +12,7 @@ A plugin for [Slopsmith](https://github.com/got-feedback/feedback) that replaces
 - **Hi-hat variations** — closed (filled X), pedal (small X at bottom), open (ring with "o" inside)
 - **Neon glow effects** — each drum piece has a unique color with multi-layer glow
 - **Velocity-based sizing** — louder hits are bigger, ghost notes are smaller
-- **Auto-activate** — switches on automatically for Drums/Percussion arrangements
+- **Auto-activate** — picked automatically in the **Auto** visualization mode for Drums/Percussion arrangements and songs with a drum tab
 - **MIDI drum pad input** — connect any MIDI drum pad, electronic kit, or controller via Web MIDI API
 - **Custom MIDI mapping** — "Learn" mode to assign any MIDI note to any lane, for non-standard drum pads
 - **Built-in drum sounds** — WebAudioFont-powered GM drum kit playback on MIDI hit
@@ -45,7 +45,16 @@ git clone https://github.com/got-feedback/feedback-plugin-drums.git drums
 docker compose restart
 ```
 
-A "Drums" button will appear in the player controls when you play a song. Click the gear icon next to it to configure MIDI input and sound settings.
+Drum Highway is also bundled with the feedBack Desktop app.
+
+## Usage
+
+Drum Highway is a visualization, so it replaces the highway instead of adding a button.
+
+1. Play a song.
+2. Open the visualization picker (**Visualization & quality** on the player rail) and choose **Drum Highway**. With **Auto (match arrangement)** selected, it is picked automatically for drum arrangements (Drums, Percussion or Drum Kit) and for songs that ship a drum tab.
+3. While Drum Highway is active, a ⚙ gear button opens the MIDI input and sound settings. In the v3 UI the gear sits in the **Plugin controls** popover on the player rail. Under splitscreen it sits in each panel's bar.
+4. Pick another visualization (for example **Classic 2D Highway**) to switch back.
 
 ## How It Works
 
